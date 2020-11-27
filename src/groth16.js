@@ -25,10 +25,10 @@ const assert = require("assert");
 const inBrowser = (typeof window !== "undefined");
 let NodeWorker;
 let NodeCrypto;
-if (!inBrowser) {
-    NodeWorker = require("worker_threads").Worker;
-    NodeCrypto = require("crypto");
-}
+// if (!inBrowser) {
+//    NodeWorker = require("worker_threads").Worker;
+//    NodeCrypto = require("crypto");
+//}
 
 
 class Deferred {
@@ -236,11 +236,12 @@ async function build(params) {
 
             groth16.workers[i].onmessage = getOnMsg(i);
 
-        } else {
-            groth16.workers[i] = new NodeWorker("(" + thread.toString()+ ")(require('worker_threads').parentPort);", {eval: true});
-
-            groth16.workers[i].on("message", getOnMsg(i));
         }
+		//else {
+        //    groth16.workers[i] = new NodeWorker("(" + thread.toString()+ ")(require('worker_threads').parentPort);", {eval: true});
+
+        //    groth16.workers[i].on("message", getOnMsg(i));
+        //}
 
         groth16.working[i]=false;
     }
