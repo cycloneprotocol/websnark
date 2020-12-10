@@ -33,7 +33,7 @@ let NodeCrypto;
 
 class Deferred {
     constructor() {
-        this.promise = new Promise((resolve, reject)=> {
+        this.promise = new Promise((resolve, reject) => {
             this.reject = reject;
             this.resolve = resolve;
         });
@@ -51,17 +51,35 @@ function thread(self) {
     let memory;
     let i32;
 
-    async function init(data) {
-        const code = new Uint8Array(data.code);
-        const wasmModule = await WebAssembly.compile(code);
-        memory = new WebAssembly.Memory({initial:data.init});
-        i32 = new Uint32Array(memory.buffer);
+    // async function init(data) {
+    function init(data) {
+        // const code = new Uint8Array(data.code);
+        // const wasmModule = await WebAssembly.compile(code);
+        // memory = new WebAssembly.Memory({ initial: data.init });
+        // i32 = new Uint32Array(memory.buffer);
 
-        instance = await WebAssembly.instantiate(wasmModule, {
-            env: {
-                "memory": memory
-            }
-        });
+        // instance = await WebAssembly.instantiate(wasmModule, {
+        //     env: {
+        //         "memory": memory
+        //     }
+        // });
+        return new Promise(resolve => {
+            const code = new Uint8Array(data.code);
+            
+            WebAssembly.compile(code).then(wasmModule => {
+                memory = new WebAssembly.Memory({ initial: data.init });
+                i32 = new Uint32Array(memory.buffer);
+
+                WebAssembly.instantiate(wasmModule, {
+                    env: {
+                        "memory": memory
+                    }
+                }).then(ins => {
+                    instance = ins
+                    resolve()
+                })
+            })
+        })
     }
 
     function alloc(length) {
@@ -78,15 +96,15 @@ function thread(self) {
     function putBin(b) {
         const p = alloc(b.byteLength);
         const s32 = new Uint32Array(b);
-        i32.set(s32, p/4);
+        i32.set(s32, p / 4);
         return p;
     }
 
     function getBin(p, l) {
-        return memory.buffer.slice(p, p+l);
+        return memory.buffer.slice(p, p + l);
     }
 
-    self.onmessage = function(e) {
+    self.onmessage = function (e) {
         let data;
         if (e.data) {
             data = e.data;
@@ -95,7 +113,7 @@ function thread(self) {
         }
 
         if (data.command == "INIT") {
-            init(data).then(function() {
+            init(data).then(function () {
                 self.postMessage(data.result);
             });
         } else if (data.command == "G1_MULTIEXP") {
@@ -129,11 +147,11 @@ function thread(self) {
             const pPolsB = putBin(data.polsB);
             const nSignals = data.nSignals;
             const domainSize = data.domainSize;
-            const pSignalsM = alloc(nSignals*32);
-            const pPolA = alloc(domainSize*32);
-            const pPolB = alloc(domainSize*32);
-            const pPolA2 = alloc(domainSize*32*2);
-            const pPolB2 = alloc(domainSize*32*2);
+            const pSignalsM = alloc(nSignals * 32);
+            const pPolA = alloc(domainSize * 32);
+            const pPolB = alloc(domainSize * 32);
+            const pPolA2 = alloc(domainSize * 32 * 2);
+            const pPolB2 = alloc(domainSize * 32 * 2);
 
             instance.exports.fft_toMontgomeryN(pSignals, pSignalsM, nSignals);
 
@@ -151,16 +169,16 @@ function thread(self) {
             instance.exports.fft_fft(pPolA, domainSize, 1);
             instance.exports.fft_fft(pPolB, domainSize, 1);
 
-            instance.exports.fft_copyNInterleaved(pPolA, pPolA2+32, domainSize);
-            instance.exports.fft_copyNInterleaved(pPolB, pPolB2+32, domainSize);
+            instance.exports.fft_copyNInterleaved(pPolA, pPolA2 + 32, domainSize);
+            instance.exports.fft_copyNInterleaved(pPolB, pPolB2 + 32, domainSize);
 
-            instance.exports.fft_mulN(pPolA2, pPolB2, domainSize*2, pPolA2);
+            instance.exports.fft_mulN(pPolA2, pPolB2, domainSize * 2, pPolA2);
 
-            instance.exports.fft_ifft(pPolA2, domainSize*2, 0);
+            instance.exports.fft_ifft(pPolA2, domainSize * 2, 0);
 
-            instance.exports.fft_fromMontgomeryN(pPolA2+domainSize*32, pPolA2+domainSize*32, domainSize);
+            instance.exports.fft_fromMontgomeryN(pPolA2 + domainSize * 32, pPolA2 + domainSize * 32, domainSize);
 
-            data.result = getBin(pPolA2+domainSize*32, domainSize*32);
+            data.result = getBin(pPolA2 + domainSize * 32, domainSize * 32);
             i32[0] = oldAlloc;
             self.postMessage(data.result, [data.result]);
         } else if (data.command == "TERMINATE") {
@@ -178,11 +196,11 @@ async function build(params) {
 
     groth16.q = bigInt("21888242871839275222246405745257275088696311157297823662689037894645226208583");
     groth16.r = bigInt("21888242871839275222246405745257275088548364400416034343698204186575808495617");
-    groth16.n64 = Math.floor((groth16.q.minus(1).bitLength() - 1)/64) +1;
-    groth16.n32 = groth16.n64*2;
-    groth16.n8 = groth16.n64*8;
+    groth16.n64 = Math.floor((groth16.q.minus(1).bitLength() - 1) / 64) + 1;
+    groth16.n32 = groth16.n64 * 2;
+    groth16.n8 = groth16.n64 * 8;
 
-    groth16.memory = new WebAssembly.Memory({initial:defaultParams.wasmInitialMemory});
+    groth16.memory = new WebAssembly.Memory({ initial: defaultParams.wasmInitialMemory });
     groth16.i32 = new Uint32Array(groth16.memory.buffer);
 
     const wasmModule = await WebAssembly.compile(groth16_wasm.code);
@@ -205,28 +223,28 @@ async function build(params) {
 
     let concurrency;
 
-    if ((typeof(navigator) === "object") && navigator.hardwareConcurrency) {
+    if ((typeof (navigator) === "object") && navigator.hardwareConcurrency) {
         concurrency = navigator.hardwareConcurrency;
     } else {
         concurrency = 8;
     }
 
     function getOnMsg(i) {
-        return function(e) {
+        return function (e) {
             let data;
-            if ((e)&&(e.data)) {
+            if ((e) && (e.data)) {
                 data = e.data;
             } else {
                 data = e;
             }
 
-            groth16.working[i]=false;
+            groth16.working[i] = false;
             groth16.pendingDeferreds[i].resolve(data);
             groth16.processWorks();
         };
     }
 
-    for (let i = 0; i<concurrency; i++) {
+    for (let i = 0; i < concurrency; i++) {
 
         if (inBrowser) {
             const blob = new Blob(["(", thread.toString(), ")(self);"], { type: "text/javascript" });
@@ -237,17 +255,16 @@ async function build(params) {
             groth16.workers[i].onmessage = getOnMsg(i);
 
         }
-		//else {
+        //else {
         //    groth16.workers[i] = new NodeWorker("(" + thread.toString()+ ")(require('worker_threads').parentPort);", {eval: true});
-
         //    groth16.workers[i].on("message", getOnMsg(i));
         //}
 
-        groth16.working[i]=false;
+        groth16.working[i] = false;
     }
 
     const initPromises = [];
-    for (let i=0; i<groth16.workers.length;i++) {
+    for (let i = 0; i < groth16.workers.length; i++) {
         const copyCode = groth16_wasm.code.buffer.slice(0);
         initPromises.push(groth16.postAction(i, {
             command: "INIT",
@@ -278,7 +295,7 @@ class Groth16 {
     }
 
     processWorks() {
-        for (let i=0; (i<this.workers.length)&&(this.actionQueue.length > 0); i++) {
+        for (let i = 0; (i < this.workers.length) && (this.actionQueue.length > 0); i++) {
             if (this.working[i] == false) {
                 const work = this.actionQueue.shift();
                 this.postAction(i, work.data, work.transfers, work.deferred);
@@ -307,17 +324,17 @@ class Groth16 {
 
     putBin(p, b) {
         const s32 = new Uint32Array(b);
-        this.i32.set(s32, p/4);
+        this.i32.set(s32, p / 4);
     }
 
     getBin(p, l) {
-        return this.memory.buffer.slice(p, p+l);
+        return this.memory.buffer.slice(p, p + l);
     }
 
     bin2int(b) {
         const i32 = new Uint32Array(b);
         let acc = bigInt(i32[7]);
-        for (let i=6; i>=0; i--) {
+        for (let i = 6; i >= 0; i--) {
             acc = acc.shiftLeft(32);
             acc = acc.add(i32[i]);
         }
@@ -326,39 +343,39 @@ class Groth16 {
 
     bin2g1(b) {
         return [
-            this.bin2int(b.slice(0,32)),
-            this.bin2int(b.slice(32,64)),
-            this.bin2int(b.slice(64,96)),
+            this.bin2int(b.slice(0, 32)),
+            this.bin2int(b.slice(32, 64)),
+            this.bin2int(b.slice(64, 96)),
         ];
     }
     bin2g2(b) {
         return [
             [
-                this.bin2int(b.slice(0,32)),
-                this.bin2int(b.slice(32,64))
+                this.bin2int(b.slice(0, 32)),
+                this.bin2int(b.slice(32, 64))
             ],
             [
-                this.bin2int(b.slice(64,96)),
-                this.bin2int(b.slice(96,128))
+                this.bin2int(b.slice(64, 96)),
+                this.bin2int(b.slice(96, 128))
             ],
             [
-                this.bin2int(b.slice(128,160)),
-                this.bin2int(b.slice(160,192))
+                this.bin2int(b.slice(128, 160)),
+                this.bin2int(b.slice(160, 192))
             ],
         ];
     }
 
     async g1_multiexp(scalars, points) {
-        const nPoints = scalars.byteLength /32;
+        const nPoints = scalars.byteLength / 32;
         const nPointsPerThread = Math.floor(nPoints / this.workers.length);
         const opPromises = [];
-        for (let i=0; i<this.workers.length; i++) {
+        for (let i = 0; i < this.workers.length; i++) {
             const th_nPoints =
-                i < this.workers.length -1 ?
+                i < this.workers.length - 1 ?
                     nPointsPerThread :
-                    nPoints - (nPointsPerThread * (this.workers.length -1));
-            const scalars_th = scalars.slice(i*nPointsPerThread*32, i*nPointsPerThread*32 + th_nPoints*32);
-            const points_th = points.slice(i*nPointsPerThread*64, i*nPointsPerThread*64 + th_nPoints*64);
+                    nPoints - (nPointsPerThread * (this.workers.length - 1));
+            const scalars_th = scalars.slice(i * nPointsPerThread * 32, i * nPointsPerThread * 32 + th_nPoints * 32);
+            const points_th = points.slice(i * nPointsPerThread * 64, i * nPointsPerThread * 64 + th_nPoints * 64);
             opPromises.push(
                 this.queueAction({
                     command: "G1_MULTIEXP",
@@ -372,7 +389,7 @@ class Groth16 {
         const results = await Promise.all(opPromises);
 
         this.instance.exports.g1_zero(this.pr0);
-        for (let i=0; i<results.length; i++) {
+        for (let i = 0; i < results.length; i++) {
             this.putBin(this.pr1, results[i]);
             this.instance.exports.g1_add(this.pr0, this.pr1, this.pr0);
         }
@@ -381,16 +398,16 @@ class Groth16 {
     }
 
     async g2_multiexp(scalars, points) {
-        const nPoints = scalars.byteLength /32;
+        const nPoints = scalars.byteLength / 32;
         const nPointsPerThread = Math.floor(nPoints / this.workers.length);
         const opPromises = [];
-        for (let i=0; i<this.workers.length; i++) {
+        for (let i = 0; i < this.workers.length; i++) {
             const th_nPoints =
-                i < this.workers.length -1 ?
+                i < this.workers.length - 1 ?
                     nPointsPerThread :
-                    nPoints - (nPointsPerThread * (this.workers.length -1));
-            const scalars_th = scalars.slice(i*nPointsPerThread*32, i*nPointsPerThread*32 + th_nPoints*32);
-            const points_th = points.slice(i*nPointsPerThread*128, i*nPointsPerThread*128 + th_nPoints*128);
+                    nPoints - (nPointsPerThread * (this.workers.length - 1));
+            const scalars_th = scalars.slice(i * nPointsPerThread * 32, i * nPointsPerThread * 32 + th_nPoints * 32);
+            const points_th = points.slice(i * nPointsPerThread * 128, i * nPointsPerThread * 128 + th_nPoints * 128);
             opPromises.push(
                 this.queueAction({
                     command: "G2_MULTIEXP",
@@ -404,7 +421,7 @@ class Groth16 {
         const results = await Promise.all(opPromises);
 
         this.instance.exports.g2_zero(this.pr0);
-        for (let i=0; i<results.length; i++) {
+        for (let i = 0; i < results.length; i++) {
             this.putBin(this.pr1, results[i]);
             this.instance.exports.g2_add(this.pr0, this.pr1, this.pr0);
         }
@@ -439,20 +456,20 @@ class Groth16 {
     loadPoint1(b) {
         const p = this.alloc(96);
         this.putBin(p, b);
-        this.instance.exports.f1m_one(p+64);
+        this.instance.exports.f1m_one(p + 64);
         return p;
     }
 
     loadPoint2(b) {
         const p = this.alloc(192);
         this.putBin(p, b);
-        this.instance.exports.f2m_one(p+128);
+        this.instance.exports.f2m_one(p + 128);
         return p;
     }
 
     terminate() {
-        for (let i=0; i<this.workers.length; i++) {
-            this.workers[i].postMessage({command: "TERMINATE"});
+        for (let i = 0; i < this.workers.length; i++) {
+            this.workers[i].postMessage({ command: "TERMINATE" });
         }
     }
 
@@ -482,20 +499,20 @@ class Groth16 {
         const pHExps = pkey32[9];
         const polsA = pkey.slice(pPolsA, pPolsA + pPolsB);
         const polsB = pkey.slice(pPolsB, pPolsB + pPointsA);
-        const pointsA = pkey.slice(pPointsA, pPointsA + nSignals*64);
-        const pointsB1 = pkey.slice(pPointsB1, pPointsB1 + nSignals*64);
-        const pointsB2 = pkey.slice(pPointsB2, pPointsB2 + nSignals*128);
-        const pointsC = pkey.slice(pPointsC, pPointsC + (nSignals-nPublic-1)*64);
-        const pointsHExps = pkey.slice(pHExps, pHExps + domainSize*64);
+        const pointsA = pkey.slice(pPointsA, pPointsA + nSignals * 64);
+        const pointsB1 = pkey.slice(pPointsB1, pPointsB1 + nSignals * 64);
+        const pointsB2 = pkey.slice(pPointsB2, pPointsB2 + nSignals * 128);
+        const pointsC = pkey.slice(pPointsC, pPointsC + (nSignals - nPublic - 1) * 64);
+        const pointsHExps = pkey.slice(pHExps, pHExps + domainSize * 64);
 
-        const alfa1 = pkey.slice(10*4, 10*4 + 64);
-        const beta1 = pkey.slice(10*4 + 64, 10*4 + 128);
-        const delta1 = pkey.slice(10*4 + 128, 10*4 + 192);
-        const beta2 = pkey.slice(10*4 + 192, 10*4 + 320);
-        const delta2 = pkey.slice(10*4 + 320, 10*4 + 448);
+        const alfa1 = pkey.slice(10 * 4, 10 * 4 + 64);
+        const beta1 = pkey.slice(10 * 4 + 64, 10 * 4 + 128);
+        const delta1 = pkey.slice(10 * 4 + 128, 10 * 4 + 192);
+        const beta2 = pkey.slice(10 * 4 + 192, 10 * 4 + 320);
+        const delta2 = pkey.slice(10 * 4 + 320, 10 * 4 + 448);
 
 
-        const pH = this.calcH(signals.slice(0), polsA, polsB, nSignals, domainSize).then( (h) => {
+        const pH = this.calcH(signals.slice(0), polsA, polsB, nSignals, domainSize).then((h) => {
             /* Debug code to print the result of h
             for (let i=0; i<domainSize; i++) {
                 const a = this.bin2int(h.slice(i*32, i*32+32));
@@ -508,7 +525,7 @@ class Groth16 {
         const pA = this.g1_multiexp(signals.slice(0), pointsA);
         const pB1 = this.g1_multiexp(signals.slice(0), pointsB1);
         const pB2 = this.g2_multiexp(signals.slice(0), pointsB2);
-        const pC = this.g1_multiexp(signals.slice((nPublic+1)*32), pointsC);
+        const pC = this.g1_multiexp(signals.slice((nPublic + 1) * 32), pointsC);
 
         const res = await Promise.all([pA, pB1, pB2, pC, pH]);
 
